@@ -1,0 +1,112 @@
+[
+  {
+    "rule_id": "CUST-001",
+    "dimension": "Completeness",
+    "rule_name": "Customer ID Mandatory",
+    "attribute": "customer_id",
+    "rule_type": "NOT_NULL",
+    "parameter": null,
+    "severity": "CRITICAL",
+    "enabled": true
+  },
+  {
+    "rule_id": "CUST-002",
+    "dimension": "Uniqueness",
+    "rule_name": "Customer ID Unique",
+    "attribute": "customer_id",
+    "rule_type": "UNIQUE",
+    "parameter": null,
+    "severity": "CRITICAL",
+    "enabled": true
+  },
+  {
+    "rule_id": "CUST-010",
+    "dimension": "Completeness",
+    "rule_name": "Name Mandatory",
+    "attribute": "name",
+    "rule_type": "NOT_NULL",
+    "parameter": null,
+    "severity": "ERROR",
+    "enabled": true
+  },
+  {
+    "rule_id": "CUST-012",
+    "dimension": "Validity",
+    "rule_name": "Name Length",
+    "attribute": "name",
+    "rule_type": "LENGTH",
+    "parameter": {"min": 2, "max": 100},
+    "severity": "WARNING",
+    "enabled": true
+  },
+  {
+    "rule_id": "CUST-020",
+    "dimension": "Completeness",
+    "rule_name": "Email Mandatory",
+    "attribute": "email",
+    "rule_type": "NOT_NULL",
+    "parameter": null,
+    "severity": "ERROR",
+    "enabled": true
+  },
+  {
+    "rule_id": "CUST-021",
+    "dimension": "Validity",
+    "rule_name": "Email Format",
+    "attribute": "email",
+    "rule_type": "REGEX",
+    "parameter": "^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$",
+    "severity": "ERROR",
+    "enabled": true
+  },
+  {
+    "rule_id": "CUST-030",
+    "dimension": "Completeness",
+    "rule_name": "Phone Mandatory",
+    "attribute": "phone",
+    "rule_type": "NOT_NULL",
+    "parameter": null,
+    "severity": "WARNING",
+    "enabled": true
+  },
+  {
+    "rule_id": "CUST-031",
+    "dimension": "Validity",
+    "rule_name": "Phone Format",
+    "attribute": "phone",
+    "rule_type": "REGEX",
+    "parameter": "^\\+?\\d{7,15}$",
+    "severity": "ERROR",
+    "enabled": true
+  },
+  {
+    "rule_id": "CUST-036",
+    "dimension": "Validity",
+    "rule_name": "Repeated Digit Phone",
+    "attribute": "phone",
+    "rule_type": "NOT_REPEATED_DIGITS",
+    "parameter": null,
+    "severity": "WARNING",
+    "enabled": true
+  },
+  {
+    "rule_id": "CUST-050",
+    "dimension": "Validity",
+    "rule_name": "Age Range",
+    "attribute": "age",
+    "rule_type": "RANGE",
+    "parameter": {"min": 0, "max": 120},
+    "severity": "ERROR",
+    "enabled": true
+  },
+  {
+    "rule_id": "CUST-044",
+    "dimension": "Consistency",
+    "rule_name": "Region Valid Value",
+    "attribute": "region",
+    "rule_type": "ENUM",
+    "parameter": ["North", "South", "East", "West"],
+    "severity": "WARNING",
+    "enabled": true
+  }
+]
