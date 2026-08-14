@@ -24,6 +24,10 @@ from predictive import (
     predict_quality_score_next_month, predict_duplicate_trend,
     predict_null_trend, predict_volume_growth, predict_columns_likely_to_fail
 )
+from rule_engine import (
+    load_rule_catalog, apply_rules, summarize_by_dimension,
+    get_exceptions, overall_rule_score
+)
 
 st.set_page_config(page_title="Data Quality & Profiling Platform", layout="wide")
 init_db()
@@ -66,6 +70,40 @@ if uploaded_file and dataset_name:
 
     st.header("Data Quality Score")
     st.metric("Overall Quality Score", f"{profile['quality_score']} / 100")
+
+    # ---------------------------------------------------------------
+    # 3b. Rule-Based DQ Results (metadata-driven rule engine)
+    # ---------------------------------------------------------------
+    st.header("DQ Rule Results")
+    rule_catalog = load_rule_catalog("rule_catalog.json")
+    rule_results = apply_rules(df, rule_catalog)
+    score = overall_rule_score(rule_results)
+
+    rcol1, rcol2, rcol3, rcol4, rcol5 = st.columns(5)
+    rcol1.metric("Rules Executed", score["rules_executed"])
+    rcol2.metric("Passed", score["passed"])
+    rcol3.metric("Failed", score["failed"])
+    rcol4.metric("Warnings", score["warnings"])
+    rcol5.metric("Critical Issues", score["critical_issues"])
+
+    st.subheader("DQ Dimensions")
+    dim_summary = summarize_by_dimension(rule_results)
+    if not dim_summary.empty:
+        fig_dim = px.bar(dim_summary, x="dimension", y="pass_rate_pct",
+                          color="pass_rate_pct", color_continuous_scale="RdYlGn",
+                          range_y=[0, 100], title="Pass Rate % by DQ Dimension")
+        st.plotly_chart(fig_dim, use_container_width=True)
+        st.dataframe(dim_summary, use_container_width=True)
+    else:
+        st.info("No rules matched columns in this dataset.")
+
+    st.subheader("Exceptions (Failed / Warning Records)")
+    exceptions_df = get_exceptions(rule_results, df)
+    if not exceptions_df.empty:
+        st.dataframe(exceptions_df, use_container_width=True)
+        st.caption(f"{len(exceptions_df)} rule violations found across {exceptions_df['record_id'].nunique()} records.")
+    else:
+        st.success("No rule violations found.")
 
     # ---------------------------------------------------------------
     # 4. Column Health Score (heatmap-style)
