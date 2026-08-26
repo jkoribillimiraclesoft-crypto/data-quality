@@ -130,5 +130,109 @@
     "severity": "WARNING",
     "enabled": true,
     "priority": 11
+  },
+  {
+    "rule_id": "INC-060",
+    "dimension": "Timeliness",
+    "rule_name": "Incident Datetime Mandatory",
+    "attribute": "incident_datetime",
+    "rule_type": "NOT_NULL",
+    "parameter": null,
+    "severity": "ERROR",
+    "enabled": true,
+    "priority": 12
+  },
+  {
+    "rule_id": "INC-061",
+    "dimension": "Timeliness",
+    "rule_name": "Incident Datetime Format",
+    "attribute": "incident_datetime",
+    "rule_type": "REGEX",
+    "parameter": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
+    "severity": "WARNING",
+    "enabled": true,
+    "priority": 13
+  },
+  {
+    "rule_id": "INC-070",
+    "dimension": "Accuracy",
+    "rule_name": "Suspect Age Range",
+    "attribute": "suspect_age",
+    "rule_type": "RANGE",
+    "parameter": {
+      "min": 0,
+      "max": 120
+    },
+    "severity": "ERROR",
+    "enabled": true,
+    "priority": 14
+  },
+  {
+    "rule_id": "INC-071",
+    "dimension": "Accuracy",
+    "rule_name": "Property Loss Non-Negative",
+    "attribute": "property_loss_usd",
+    "rule_type": "RANGE",
+    "parameter": {
+      "min": 0,
+      "max": 1000000
+    },
+    "severity": "WARNING",
+    "enabled": true,
+    "priority": 15
+  },
+  {
+    "rule_id": "INC-080",
+    "dimension": "Conformity",
+    "rule_name": "State Code Format",
+    "attribute": "state",
+    "rule_type": "REGEX",
+    "parameter": "^[A-Z]{2}$",
+    "severity": "WARNING",
+    "enabled": true,
+    "priority": 16
+  },
+  {
+    "rule_id": "INC-081",
+    "dimension": "Conformity",
+    "rule_name": "Victim Gender Valid Value",
+    "attribute": "victim_gender",
+    "rule_type": "ENUM",
+    "parameter": [
+      "Male",
+      "Female",
+      "Other",
+      "Unknown"
+    ],
+    "severity": "WARNING",
+    "enabled": true,
+    "priority": 17
+  },
+  {
+    "rule_id": "INC-090",
+    "dimension": "Integrity",
+    "rule_name": "Case Status Valid Value",
+    "attribute": "case_status",
+    "rule_type": "ENUM",
+    "parameter": [
+      "Open",
+      "Closed",
+      "Under Investigation",
+      "Pending"
+    ],
+    "severity": "ERROR",
+    "enabled": true,
+    "priority": 18
+  },
+  {
+    "rule_id": "INC-091",
+    "dimension": "Integrity",
+    "rule_name": "Weapon Used Mandatory",
+    "attribute": "weapon_used",
+    "rule_type": "NOT_NULL",
+    "parameter": null,
+    "severity": "WARNING",
+    "enabled": true,
+    "priority": 19
   }
 ]
