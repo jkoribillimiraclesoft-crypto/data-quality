@@ -211,216 +211,112 @@ if uploaded_file:
         col4.metric("Overall Quality Score", f"{profile['quality_score']}/100")
 
         # -----------------------------------------------------------
-        # Wide-dataset handling
+        # Wide-dataset handling: past this many columns, vertical bars
+        # / rotated x-axis labels become unreadable. Past the threshold
+        # we switch to horizontal orientation (labels on the y-axis,
+        # never rotated, chart grows downward instead of squeezing
+        # sideways) and default to showing only the worst offenders,
+        # with an option to expand to the full column list.
         # -----------------------------------------------------------
         WIDE_THRESHOLD = 15
         n_cols_total = len(health_df := profile["column_health"])
         is_wide = n_cols_total > WIDE_THRESHOLD
 
         def _limited(df, value_col, ascending, label):
-            """For wide datasets, cap chart rows and show the worst offenders."""
+            """For wide datasets, let the user cap how many columns show
+            (worst-first) instead of dumping everything into one chart."""
             if not is_wide or len(df) <= WIDE_THRESHOLD:
                 return df.sort_values(value_col, ascending=ascending)
-
             max_n = len(df)
             default_n = min(20, max_n)
             top_n = st.slider(
-                f"Show worst N columns - {label}",
-                min_value=5,
-                max_value=max_n,
-                value=default_n,
-                key=f"topn_{label}",
+                f"Show worst N columns - {label}", min_value=5, max_value=max_n,
+                value=default_n, key=f"topn_{label}",
             )
             return df.sort_values(value_col, ascending=ascending).head(top_n)
 
         def _dyn_height(n):
-            return max(320, min(1400, 32 * n))
+            return max(320, min(1400, 28 * n))
 
-        # -----------------------------------------------------------
-        # Column Health
-        # -----------------------------------------------------------
         st.subheader("Column Health Score")
-        health_plot_df = _limited(
-            health_df, "health_score", ascending=True, label="health"
-        )
-
+        health_plot_df = _limited(health_df, "health_score", ascending=True, label="health")
         if is_wide:
             health_sorted = health_plot_df.sort_values("health_score")
-            fig = go.Figure(
-                go.Bar(
-                    x=health_sorted["health_score"],
-                    y=health_sorted["column"],
-                    orientation="h",
-                    text=health_sorted["health_score"].round(1).astype(str),
-                    textposition="outside",
-                    marker=dict(
-                        color=health_sorted["health_score"],
-                        colorscale=HEALTH_SCALE,
-                        cmin=0,
-                        cmax=100,
-                    ),
-                    hovertemplate=(
-                        "<b>%{y}</b><br>"
-                        "Health Score: %{x:.1f}%"
-                        "<extra></extra>"
-                    ),
-                )
-            )
-            fig.update_layout(
-                xaxis=dict(range=[0, 100], title="Health Score (%)"),
-                yaxis_title="",
-                height=_dyn_height(len(health_sorted)),
-                margin=dict(l=10, r=50, t=20, b=40),
-            )
+            fig = go.Figure(go.Bar(
+                x=health_sorted["health_score"], y=health_sorted["column"], orientation="h",
+                marker=dict(color=health_sorted["health_score"], colorscale=HEALTH_SCALE, cmin=0, cmax=100),
+            ))
+            fig.update_layout(xaxis=dict(range=[0, 100], title="Health Score"), yaxis_title="",
+                               height=_dyn_height(len(health_sorted)), margin=dict(l=10, r=20, t=20, b=30))
         else:
-            health_sorted = health_plot_df.sort_values("health_score")
-            fig = go.Figure(
-                go.Bar(
-                    x=health_sorted["health_score"],
-                    y=health_sorted["column"],
-                    orientation="h",
-                    text=health_sorted["health_score"].round(1).astype(str),
-                    textposition="outside",
-                    marker=dict(
-                        color=health_sorted["health_score"],
-                        colorscale=HEALTH_SCALE,
-                        cmin=0,
-                        cmax=100,
-                    ),
-                    hovertemplate=(
-                        "<b>%{y}</b><br>"
-                        "Health Score: %{x:.1f}%"
-                        "<extra></extra>"
-                    ),
-                )
-            )
-            fig.update_layout(
-                xaxis=dict(range=[0, 100], title="Health Score (%)"),
-                yaxis_title="",
-                height=_dyn_height(len(health_sorted)),
-                margin=dict(l=10, r=50, t=20, b=40),
-            )
-
+            fig = px.bar(health_plot_df, x="column", y="health_score", color="health_score",
+                         color_continuous_scale=HEALTH_SCALE, range_y=[0, 100])
+            fig.update_layout(coloraxis_showscale=False, xaxis_title="", yaxis_title="Health Score")
         st.plotly_chart(fig, use_container_width=True)
-
         if is_wide:
             with st.expander(f"View all {n_cols_total} columns (table)"):
-                st.dataframe(
-                    health_df.sort_values("health_score"),
-                    use_container_width=True,
-                )
+                st.dataframe(health_df.sort_values("health_score"), use_container_width=True)
 
-        # -----------------------------------------------------------
-        # Missing Values
-        # -----------------------------------------------------------
-        st.subheader("Missing Values")
-        nulls_df = profile["nulls"]
-
-        if not nulls_df.empty:
-            nulls_plot_df = _limited(
-                nulls_df, "null_pct", ascending=False, label="nulls"
-            ).sort_values("null_pct", ascending=True)
-
-            fig_null = go.Figure(
-                go.Bar(
-                    x=nulls_plot_df["null_pct"],
-                    y=nulls_plot_df["column"],
-                    orientation="h",
-                    text=nulls_plot_df["null_pct"].round(1).astype(str) + "%",
-                    textposition="outside",
-                    marker_color=BRAND_BLUE,
-                    hovertemplate=(
-                        "<b>%{y}</b><br>"
-                        "Null Rate: %{x:.2f}%"
-                        "<extra></extra>"
-                    ),
-                )
-            )
-            fig_null.update_layout(
-                xaxis=dict(title="Null Rate (%)"),
-                yaxis_title="",
-                height=_dyn_height(len(nulls_plot_df)),
-                margin=dict(l=10, r=50, t=20, b=40),
-            )
+        if is_wide:
+            # Stack full-width when crowded rather than squeezing two
+            # charts side by side, which halves the usable width.
+            st.subheader("Missing Values")
+            nulls_df = profile["nulls"]
+            nulls_plot_df = _limited(nulls_df, "null_pct", ascending=False, label="nulls")
+            nulls_sorted = nulls_plot_df.sort_values("null_pct")
+            fig_null = go.Figure(go.Bar(
+                x=nulls_sorted["null_pct"], y=nulls_sorted["column"], orientation="h",
+                marker_color=BRAND_BLUE,
+            ))
+            fig_null.update_layout(xaxis_title="Null %", yaxis_title="",
+                                    height=_dyn_height(len(nulls_sorted)), margin=dict(l=10, r=20, t=20, b=30))
             st.plotly_chart(fig_null, use_container_width=True)
+            with st.expander(f"View all {len(nulls_df)} columns (table)"):
+                st.dataframe(nulls_df.sort_values("null_pct", ascending=False), use_container_width=True)
 
-            if is_wide:
-                with st.expander(f"View all {len(nulls_df)} columns (table)"):
-                    st.dataframe(
-                        nulls_df.sort_values("null_pct", ascending=False),
-                        use_container_width=True,
-                    )
-        else:
-            st.info("No column-level missing-value metrics are available.")
-
-        # -----------------------------------------------------------
-        # Outlier Distribution
-        # -----------------------------------------------------------
-        st.subheader("Outlier Distribution")
-        st.caption(
-            "Numeric columns ranked by outlier rate. "
-            "Higher values indicate columns requiring closer investigation."
-        )
-
-        outliers_df = profile["outliers"]
-
-        if not outliers_df.empty:
-            outliers_plot_df = _limited(
-                outliers_df,
-                "outlier_pct",
-                ascending=False,
-                label="outliers",
-            ).sort_values("outlier_pct", ascending=True)
-
-            fig_out = go.Figure(
-                go.Bar(
-                    x=outliers_plot_df["outlier_pct"],
-                    y=outliers_plot_df["column"],
-                    orientation="h",
-                    text=outliers_plot_df["outlier_pct"].round(2).astype(str) + "%",
-                    textposition="outside",
-                    marker_color=WARN_AMBER,
-                    hovertemplate=(
-                        "<b>%{y}</b><br>"
-                        "Outlier Rate: %{x:.2f}%"
-                        "<extra></extra>"
-                    ),
-                )
-            )
-
-            max_outlier = float(outliers_plot_df["outlier_pct"].max())
-            x_max = max(max_outlier * 1.15, 5)
-
-            fig_out.update_layout(
-                xaxis=dict(
-                    title="Outlier Rate (%)",
-                    range=[0, x_max],
-                ),
-                yaxis_title="",
-                height=_dyn_height(len(outliers_plot_df)),
-                margin=dict(l=10, r=55, t=20, b=40),
-            )
-
-            st.plotly_chart(fig_out, use_container_width=True)
-
-            if is_wide:
+            st.subheader("Outlier Distribution")
+            outliers_df = profile["outliers"]
+            if not outliers_df.empty:
+                outliers_plot_df = _limited(outliers_df, "outlier_pct", ascending=False, label="outliers")
+                outliers_sorted = outliers_plot_df.sort_values("outlier_pct")
+                fig_out = go.Figure(go.Scatter(
+                    x=outliers_sorted["outlier_pct"], y=outliers_sorted["column"],
+                    mode="lines+markers", line=dict(color=WARN_AMBER),
+                    marker=dict(size=9, color=WARN_AMBER),
+                ))
+                fig_out.update_layout(xaxis_title="Outlier %", yaxis_title="",
+                                       height=_dyn_height(len(outliers_sorted)), margin=dict(l=10, r=20, t=20, b=30))
+                st.plotly_chart(fig_out, use_container_width=True)
                 with st.expander(f"View all {len(outliers_df)} columns (table)"):
-                    st.dataframe(
-                        outliers_df.sort_values(
-                            "outlier_pct", ascending=False
-                        ),
-                        use_container_width=True,
-                    )
+                    st.dataframe(outliers_df.sort_values("outlier_pct", ascending=False), use_container_width=True)
+            else:
+                st.info("No numeric columns found for outlier detection.")
         else:
-            st.info("No numeric columns found for outlier detection.")
+            c1, c2 = st.columns(2)
+            with c1:
+                st.subheader("Missing Values")
+                nulls_df = profile["nulls"]
+                fig_null = px.bar(nulls_df, x="column", y="null_pct")
+                fig_null.update_traces(marker_color=BRAND_BLUE)
+                fig_null.update_layout(xaxis_title="", yaxis_title="Null %")
+                st.plotly_chart(fig_null, use_container_width=True)
+            with c2:
+                st.subheader("Outlier Distribution")
+                outliers_df = profile["outliers"]
+                if not outliers_df.empty:
+                    # Line chart per request - same underlying outlier_pct data,
+                    # just a different visual representation than a bar chart.
+                    fig_out = px.line(outliers_df, x="column", y="outlier_pct", markers=True)
+                    fig_out.update_traces(line_color=WARN_AMBER, marker=dict(size=9, color=WARN_AMBER))
+                    fig_out.update_layout(xaxis_title="", yaxis_title="Outlier %")
+                    st.plotly_chart(fig_out, use_container_width=True)
+                else:
+                    st.info("No numeric columns found for outlier detection.")
 
-        # -----------------------------------------------------------
-        # Duplicate Analysis
-        # -----------------------------------------------------------
         st.subheader("Duplicate Analysis")
         dup = profile["duplicates"]
         dcol1, dcol2 = st.columns(2)
-        dcol1.metric("Duplicate Rows", f"{dup['duplicate_rows']:,}")
+        dcol1.metric("Duplicate Rows", dup["duplicate_rows"])
         dcol2.metric("Duplicate %", f"{dup['duplicate_pct']}%")
 
     # =============================================================
@@ -436,86 +332,39 @@ if uploaded_file:
         rcol5.metric("Critical Issues", score["critical_issues"])
 
         st.subheader("DQ Dimensions")
-        st.caption(
-            "Pass/fail distribution across configured DQ dimensions. "
-            "Dimensions are ranked from lowest to highest pass rate."
-        )
-
         if not dim_summary.empty:
-            dim_plot_df = (
-                dim_summary
-                .sort_values("pass_rate_pct", ascending=True)
-                .copy()
-            )
-
-            # The current rule_engine output provides pass_rate_pct.
-            # Derive fail rate for a 100% stacked health view.
-            dim_plot_df["fail_rate_pct"] = (
-                100 - dim_plot_df["pass_rate_pct"]
-            ).clip(lower=0)
-
-            fig_dim = go.Figure()
-
-            fig_dim.add_trace(
-                go.Bar(
-                    y=dim_plot_df["dimension"],
-                    x=dim_plot_df["pass_rate_pct"],
-                    name="Pass",
-                    orientation="h",
-                    text=dim_plot_df["pass_rate_pct"].round(1).astype(str) + "%",
-                    textposition="inside",
-                    hovertemplate=(
-                        "<b>%{y}</b><br>"
-                        "Pass Rate: %{x:.2f}%"
-                        "<extra></extra>"
-                    ),
-                )
-            )
-
-            fig_dim.add_trace(
-                go.Bar(
-                    y=dim_plot_df["dimension"],
-                    x=dim_plot_df["fail_rate_pct"],
-                    name="Fail / Warning",
-                    orientation="h",
-                    text=dim_plot_df["fail_rate_pct"].round(1).astype(str) + "%",
-                    textposition="inside",
-                    hovertemplate=(
-                        "<b>%{y}</b><br>"
-                        "Fail / Warning Rate: %{x:.2f}%"
-                        "<extra></extra>"
-                    ),
-                )
-            )
-
+            # Line chart with markers - one point per dimension, connected
+            # to show the pass-rate profile across dimensions at a glance,
+            # with data labels above each marker.
+            dim_sorted = dim_summary.sort_values("dimension")
+            fig_dim = go.Figure(go.Scatter(
+                x=dim_sorted["dimension"],
+                y=dim_sorted["pass_rate_pct"],
+                mode="lines+markers+text",
+                line=dict(color=BRAND_BLUE, width=3),
+                marker=dict(
+                    size=12,
+                    color=dim_sorted["pass_rate_pct"],
+                    colorscale=HEALTH_SCALE, cmin=0, cmax=100,
+                    line=dict(color="white", width=1),
+                ),
+                text=dim_sorted["pass_rate_pct"].astype(str) + "%",
+                textposition="top center",
+                hovertemplate="%{x}: %{y}%<extra></extra>",
+            ))
             fig_dim.update_layout(
-                barmode="stack",
-                xaxis=dict(
-                    title="Rule Result Distribution (%)",
-                    range=[0, 100],
-                    ticksuffix="%",
-                ),
-                yaxis_title="",
-                height=max(350, 55 * len(dim_plot_df)),
-                legend=dict(
-                    orientation="h",
-                    yanchor="bottom",
-                    y=1.02,
-                    xanchor="right",
-                    x=1,
-                ),
-                margin=dict(l=10, r=20, t=50, b=40),
+                yaxis=dict(range=[0, 115], title="Pass Rate %"),
+                xaxis_title="",
+                height=380,
+                margin=dict(l=10, r=20, t=30, b=30),
             )
-
             st.plotly_chart(fig_dim, use_container_width=True)
-
             with st.expander("View dimension detail table"):
                 st.dataframe(dim_summary, use_container_width=True)
         else:
             st.info("No rules matched columns in this dataset.")
 
         st.subheader("Exceptions (Failed / Warning Records)")
-        st.caption("Use this table to move from DQ metrics to the actual records and rule violations.")
         if not exceptions_df.empty:
             st.dataframe(exceptions_df, use_container_width=True, height=320)
             st.caption(f"{len(exceptions_df)} rule violations found across {exceptions_df['record_id'].nunique()} records.")
