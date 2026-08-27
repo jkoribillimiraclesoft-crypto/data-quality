@@ -222,7 +222,12 @@ if uploaded_file:
         n_cols_total = len(health_df := profile["column_health"])
         is_wide = n_cols_total > WIDE_THRESHOLD
 
-        def _limited(df, value_col, ascending, label):
+        # Reversed health scale: for metrics where a HIGH value is BAD
+        # (null %, outlier %) rather than good (health score), so red
+        # lands on the high end instead of the low end.
+        RISK_SCALE = [[0, PASS_GREEN], [0.5, WARN_AMBER], [1, FAIL_RED]]
+
+        def _limited(df, value_col, ascending, key, slider_label):
             """For wide datasets, let the user cap how many columns show
             (worst-first) instead of dumping everything into one chart."""
             if not is_wide or len(df) <= WIDE_THRESHOLD:
@@ -230,8 +235,8 @@ if uploaded_file:
             max_n = len(df)
             default_n = min(20, max_n)
             top_n = st.slider(
-                f"Show worst N columns - {label}", min_value=5, max_value=max_n,
-                value=default_n, key=f"topn_{label}",
+                slider_label, min_value=5, max_value=max_n,
+                value=default_n, key=f"topn_{key}",
             )
             return df.sort_values(value_col, ascending=ascending).head(top_n)
 
@@ -239,7 +244,10 @@ if uploaded_file:
             return max(320, min(1400, 28 * n))
 
         st.subheader("Column Health Score")
-        health_plot_df = _limited(health_df, "health_score", ascending=True, label="health")
+        health_plot_df = _limited(
+            health_df, "health_score", ascending=True, key="health",
+            slider_label="Number of columns to display, starting with the lowest health scores",
+        )
         if is_wide:
             health_sorted = health_plot_df.sort_values("health_score")
             fig = go.Figure(go.Bar(
@@ -262,13 +270,16 @@ if uploaded_file:
             # charts side by side, which halves the usable width.
             st.subheader("Missing Values")
             nulls_df = profile["nulls"]
-            nulls_plot_df = _limited(nulls_df, "null_pct", ascending=False, label="nulls")
+            nulls_plot_df = _limited(
+                nulls_df, "null_pct", ascending=False, key="nulls",
+                slider_label="Number of columns to display, starting with the highest missing-value %",
+            )
             nulls_sorted = nulls_plot_df.sort_values("null_pct")
             fig_null = go.Figure(go.Bar(
                 x=nulls_sorted["null_pct"], y=nulls_sorted["column"], orientation="h",
-                marker_color=BRAND_BLUE,
+                marker=dict(color=nulls_sorted["null_pct"], colorscale=RISK_SCALE, cmin=0, cmax=100),
             ))
-            fig_null.update_layout(xaxis_title="Null %", yaxis_title="",
+            fig_null.update_layout(xaxis=dict(range=[0, 100], title="Null %"), yaxis_title="",
                                     height=_dyn_height(len(nulls_sorted)), margin=dict(l=10, r=20, t=20, b=30))
             st.plotly_chart(fig_null, use_container_width=True)
             with st.expander(f"View all {len(nulls_df)} columns (table)"):
@@ -277,12 +288,15 @@ if uploaded_file:
             st.subheader("Outlier Distribution")
             outliers_df = profile["outliers"]
             if not outliers_df.empty:
-                outliers_plot_df = _limited(outliers_df, "outlier_pct", ascending=False, label="outliers")
+                outliers_plot_df = _limited(
+                    outliers_df, "outlier_pct", ascending=False, key="outliers",
+                    slider_label="Number of columns to display, starting with the highest outlier %",
+                )
                 outliers_sorted = outliers_plot_df.sort_values("outlier_pct")
                 fig_out = go.Figure(go.Scatter(
                     x=outliers_sorted["outlier_pct"], y=outliers_sorted["column"],
                     mode="lines+markers", line=dict(color=WARN_AMBER),
-                    marker=dict(size=9, color=WARN_AMBER),
+                    marker=dict(size=9, color=outliers_sorted["outlier_pct"], colorscale=RISK_SCALE, cmin=0, cmax=100),
                 ))
                 fig_out.update_layout(xaxis_title="Outlier %", yaxis_title="",
                                        height=_dyn_height(len(outliers_sorted)), margin=dict(l=10, r=20, t=20, b=30))
@@ -296,9 +310,9 @@ if uploaded_file:
             with c1:
                 st.subheader("Missing Values")
                 nulls_df = profile["nulls"]
-                fig_null = px.bar(nulls_df, x="column", y="null_pct")
-                fig_null.update_traces(marker_color=BRAND_BLUE)
-                fig_null.update_layout(xaxis_title="", yaxis_title="Null %")
+                fig_null = px.bar(nulls_df, x="column", y="null_pct", color="null_pct",
+                                   color_continuous_scale=RISK_SCALE, range_color=[0, 100])
+                fig_null.update_layout(coloraxis_showscale=False, xaxis_title="", yaxis_title="Null %")
                 st.plotly_chart(fig_null, use_container_width=True)
             with c2:
                 st.subheader("Outlier Distribution")
@@ -306,8 +320,12 @@ if uploaded_file:
                 if not outliers_df.empty:
                     # Line chart per request - same underlying outlier_pct data,
                     # just a different visual representation than a bar chart.
+                    # Markers are colored by value (green -> amber -> red).
                     fig_out = px.line(outliers_df, x="column", y="outlier_pct", markers=True)
-                    fig_out.update_traces(line_color=WARN_AMBER, marker=dict(size=9, color=WARN_AMBER))
+                    fig_out.update_traces(
+                        line_color=WARN_AMBER,
+                        marker=dict(size=9, color=outliers_df["outlier_pct"], colorscale=RISK_SCALE, cmin=0, cmax=100),
+                    )
                     fig_out.update_layout(xaxis_title="", yaxis_title="Outlier %")
                     st.plotly_chart(fig_out, use_container_width=True)
                 else:
@@ -325,29 +343,49 @@ if uploaded_file:
     with tab_rules:
         st.subheader("Rule Execution Summary")
         rcol1, rcol2, rcol3, rcol4, rcol5 = st.columns(5)
-        rcol1.metric("Rules Executed", score["rules_executed"])
-        rcol2.metric("Passed", score["passed"])
-        rcol3.metric("Failed", score["failed"])
-        rcol4.metric("Warnings", score["warnings"])
-        rcol5.metric("Critical Issues", score["critical_issues"])
+        rcol1.metric(
+            "\U0001F4CB Rules Executed", score["rules_executed"],
+            help="Total number of enabled DQ rules that were evaluated against this dataset.",
+        )
+        rcol2.metric(
+            "\u2705 Passed", score["passed"],
+            help="Rule checks where the data met the expected condition.",
+        )
+        rcol3.metric(
+            "\u274C Failed", score["failed"],
+            help="Rule checks where the data violated the expected condition.",
+        )
+        rcol4.metric(
+            "\u26A0\uFE0F Warnings", score["warnings"],
+            help="Rule checks that flagged a lower-severity issue - worth reviewing but not blocking.",
+        )
+        rcol5.metric(
+            "\U0001F534 Critical Issues", score["critical_issues"],
+            help="Failed checks marked CRITICAL severity - the highest-priority issues to fix first.",
+        )
 
-        st.subheader("DQ Dimensions")
+        st.subheader("Data Quality (DQ) Dimensions")
         if not dim_summary.empty:
             # Line chart with markers - one point per dimension, connected
-            # to show the pass-rate profile across dimensions at a glance,
-            # with data labels above each marker.
+            # to show the pass-rate profile across dimensions at a glance.
+            # Markers use a discrete PASS/WARN/FAIL color, same semantics
+            # as the rest of the app, so a glance tells you which
+            # dimensions are healthy vs. at risk vs. broken.
+            def _status_color(pct):
+                if pct >= 90:
+                    return PASS_GREEN
+                if pct >= 70:
+                    return WARN_AMBER
+                return FAIL_RED
+
             dim_sorted = dim_summary.sort_values("dimension")
+            marker_colors = dim_sorted["pass_rate_pct"].apply(_status_color)
             fig_dim = go.Figure(go.Scatter(
                 x=dim_sorted["dimension"],
                 y=dim_sorted["pass_rate_pct"],
                 mode="lines+markers+text",
-                line=dict(color=BRAND_BLUE, width=3),
-                marker=dict(
-                    size=12,
-                    color=dim_sorted["pass_rate_pct"],
-                    colorscale=HEALTH_SCALE, cmin=0, cmax=100,
-                    line=dict(color="white", width=1),
-                ),
+                line=dict(color="#D1D5DB", width=2),
+                marker=dict(size=14, color=marker_colors, line=dict(color="white", width=1.5)),
                 text=dim_sorted["pass_rate_pct"].astype(str) + "%",
                 textposition="top center",
                 hovertemplate="%{x}: %{y}%<extra></extra>",
@@ -359,6 +397,7 @@ if uploaded_file:
                 margin=dict(l=10, r=20, t=30, b=30),
             )
             st.plotly_chart(fig_dim, use_container_width=True)
+            st.caption("\U0001F7E2 90%+ healthy   \U0001F7E0 70-89% needs attention   \U0001F534 below 70% at risk")
             with st.expander("View dimension detail table"):
                 st.dataframe(dim_summary, use_container_width=True)
         else:
@@ -366,7 +405,74 @@ if uploaded_file:
 
         st.subheader("Exceptions (Failed / Warning Records)")
         if not exceptions_df.empty:
-            st.dataframe(exceptions_df, use_container_width=True, height=320)
+            # Bucket exceptions by rule: instead of a flat list of every
+            # violated record, group by which rule was violated and show
+            # what that violation actually means in plain language, plus
+            # how many records are affected - e.g. "Customer ID Unique -
+            # this value appears on more than one record - 42 records."
+            def _explain_rule(rule):
+                rtype = rule.get("rule_type")
+                attr = rule.get("attribute")
+                param = rule.get("parameter")
+                if rtype == "NOT_NULL":
+                    return f"'{attr}' is missing a value, but this field is required."
+                if rtype == "UNIQUE":
+                    return f"'{attr}' value appears on more than one record, but each value should be unique."
+                if rtype == "REGEX":
+                    return f"'{attr}' value doesn't match the required format."
+                if rtype == "LENGTH":
+                    mn = param.get("min") if isinstance(param, dict) else None
+                    mx = param.get("max") if isinstance(param, dict) else None
+                    return f"'{attr}' value length falls outside the allowed range ({mn}-{mx} characters)."
+                if rtype == "RANGE":
+                    mn = param.get("min") if isinstance(param, dict) else None
+                    mx = param.get("max") if isinstance(param, dict) else None
+                    return f"'{attr}' value falls outside the allowed range ({mn} to {mx})."
+                if rtype == "ENUM":
+                    allowed = ", ".join(param) if isinstance(param, list) else str(param)
+                    return f"'{attr}' value isn't one of the allowed values ({allowed})."
+                if rtype == "NOT_REPEATED_DIGITS":
+                    return f"'{attr}' value is a single repeated digit (e.g. 1111111111) - usually a sign of fake or placeholder data."
+                return f"'{attr}' failed the '{rule.get('rule_name', 'rule')}' check."
+
+            SEVERITY_ICON = {"CRITICAL": "\U0001F534", "ERROR": "\U0001F7E0", "WARNING": "\U0001F7E1"}
+
+            # get_exceptions() always returns:
+            # record_id, rule_id, rule_name, attribute, value, severity, status
+            # - confirmed against rule_engine.py, no guessing needed.
+            rule_by_id = {r["rule_id"]: r for r in full_rule_catalog if "rule_id" in r}
+
+            bucket_rows = []
+            for rule_id, grp in exceptions_df.groupby("rule_id"):
+                rule_meta = rule_by_id.get(rule_id)
+                if rule_meta:
+                    rule_name_disp = rule_meta.get("rule_name", rule_id)
+                    dimension_disp = rule_meta.get("dimension", "")
+                    severity_disp = rule_meta.get("severity", grp["severity"].iloc[0])
+                    explanation = _explain_rule(rule_meta)
+                else:
+                    # Rule was removed/disabled from the catalog since this
+                    # exception was generated - fall back to what's on the
+                    # exceptions row itself so nothing silently disappears.
+                    rule_name_disp = grp["rule_name"].iloc[0]
+                    dimension_disp = ""
+                    severity_disp = grp["severity"].iloc[0]
+                    explanation = "Rule violation detected."
+                record_count = grp["record_id"].nunique()
+                icon = SEVERITY_ICON.get(str(severity_disp).upper(), "")
+                bucket_rows.append({
+                    "Rule": rule_name_disp,
+                    "Dimension": dimension_disp,
+                    "Severity": f"{icon} {severity_disp}".strip(),
+                    "What it means": explanation,
+                    "Records Affected": record_count,
+                })
+
+            bucket_df = pd.DataFrame(bucket_rows).sort_values("Records Affected", ascending=False)
+            st.dataframe(bucket_df, use_container_width=True, hide_index=True)
+            with st.expander("View raw exception records"):
+                st.dataframe(exceptions_df, use_container_width=True, height=320)
+
             st.caption(f"{len(exceptions_df)} rule violations found across {exceptions_df['record_id'].nunique()} records.")
         else:
             st.success("No rule violations found.")
