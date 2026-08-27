@@ -20,7 +20,8 @@ from profiling import run_full_profile
 from schema_drift import compare_schemas, detect_data_drift
 from storage import (
     init_db, save_profiling_run, save_schema_snapshot,
-    get_run_history, get_column_metric_history, get_latest_schema
+    get_run_history, get_column_metric_history, get_latest_schema,
+    list_known_datasets, DB_PATH
 )
 from predictive import (
     predict_quality_score_next_month, predict_duplicate_trend,
@@ -569,6 +570,34 @@ if uploaded_file:
             st.plotly_chart(fig_trend, use_container_width=True)
         else:
             st.info("Run this dataset a few more times to build a trend.")
+
+        # -----------------------------------------------------------
+        # Diagnostic: shows exactly what's in the run-history DB so a
+        # "why isn't the trend showing?" question can be answered by
+        # looking at data instead of guessing. Uses list_known_datasets()
+        # from storage.py, which existed but wasn't wired up anywhere.
+        # -----------------------------------------------------------
+        with st.expander("\U0001F527 Debug: run history storage"):
+            st.caption(f"Database file: `{os.path.abspath(DB_PATH)}`")
+            st.write(f"Runs recorded for **this** dataset (`{dataset_id}`): **{len(run_history)}**")
+            if not run_history.empty:
+                st.dataframe(
+                    run_history[["run_id", "run_timestamp", "dataset_label", "quality_score", "row_count"]],
+                    use_container_width=True,
+                )
+            st.write("All datasets known to this database:")
+            known = list_known_datasets()
+            if not known.empty:
+                st.dataframe(known, use_container_width=True)
+                st.caption(
+                    "If the same file you're uploading shows up here under **multiple different** "
+                    "dataset_id values, its schema (column names/dtypes) is changing slightly between "
+                    "uploads. If it shows up only once with run_count of 1 no matter how many times you "
+                    "upload, runs aren't being persisted between uploads (check that the app isn't "
+                    "restarting/resetting its filesystem between them)."
+                )
+            else:
+                st.write("No runs recorded yet in this database at all.")
 
         st.subheader("Predictive Analytics")
         if len(run_history) >= 2:
