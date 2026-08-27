@@ -76,8 +76,22 @@ st.markdown(f"""
         padding: 14px 16px 10px 16px;
         box-shadow: 0 1px 3px rgba(0,0,0,0.04);
     }}
-    [data-testid="stMetricLabel"] {{ color: {BRAND_GRAY}; font-size: 0.8rem; }}
-    [data-testid="stMetricValue"] {{ color: {BRAND_DARK}; }}
+    [data-testid="stMetricLabel"] {{
+        color: {BRAND_GRAY};
+        font-size: clamp(0.65rem, 1.1vw, 0.8rem);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }}
+    [data-testid="stMetricValue"] {{
+        color: {BRAND_DARK};
+        font-size: clamp(1rem, 1.8vw, 1.5rem);
+        white-space: nowrap;
+    }}
+    [data-testid="stMetricDelta"] {{
+        white-space: nowrap;
+        font-size: clamp(0.65rem, 1vw, 0.8rem);
+    }}
 
     section[data-testid="stSidebar"] {{
         background: #FAFBFC;
@@ -294,14 +308,15 @@ if uploaded_file:
                     slider_label="Number of columns to display, starting with the highest outlier %",
                 )
                 outliers_sorted = outliers_plot_df.sort_values("outlier_pct")
-                fig_out = go.Figure(go.Scatter(
-                    x=outliers_sorted["outlier_pct"], y=outliers_sorted["column"],
-                    mode="lines+markers", line=dict(color=WARN_AMBER),
-                    marker=dict(size=9, color=outliers_sorted["outlier_pct"], colorscale=RISK_SCALE, cmin=0, cmax=100),
+                fig_out = go.Figure(go.Bar(
+                    x=outliers_sorted["outlier_pct"], y=outliers_sorted["column"], orientation="h",
+                    marker=dict(color=outliers_sorted["outlier_pct"], colorscale=RISK_SCALE, cmin=0, cmax=100),
                 ))
-                fig_out.update_layout(xaxis_title="Outlier %", yaxis_title="",
+                fig_out.update_layout(xaxis=dict(range=[0, max(10, outliers_sorted["outlier_pct"].max())], title="Outlier %"),
+                                       yaxis_title="",
                                        height=_dyn_height(len(outliers_sorted)), margin=dict(l=10, r=20, t=20, b=30))
                 st.plotly_chart(fig_out, use_container_width=True)
+                st.caption("Color scale: \U0001F7E2 green = low outlier %  \u2192  \U0001F534 red = high outlier %")
                 with st.expander(f"View all {len(outliers_df)} columns (table)"):
                     st.dataframe(outliers_df.sort_values("outlier_pct", ascending=False), use_container_width=True)
             else:
@@ -320,16 +335,12 @@ if uploaded_file:
                 st.subheader("Outlier Distribution")
                 outliers_df = profile["outliers"]
                 if not outliers_df.empty:
-                    # Line chart per request - same underlying outlier_pct data,
-                    # just a different visual representation than a bar chart.
-                    # Markers are colored by value (green -> amber -> red).
-                    fig_out = px.line(outliers_df, x="column", y="outlier_pct", markers=True)
-                    fig_out.update_traces(
-                        line_color=WARN_AMBER,
-                        marker=dict(size=9, color=outliers_df["outlier_pct"], colorscale=RISK_SCALE, cmin=0, cmax=100),
-                    )
-                    fig_out.update_layout(xaxis_title="", yaxis_title="Outlier %")
+                    # Bar chart, colored by value (green -> red).
+                    fig_out = px.bar(outliers_df, x="column", y="outlier_pct", color="outlier_pct",
+                                      color_continuous_scale=RISK_SCALE, range_color=[0, 100])
+                    fig_out.update_layout(coloraxis_showscale=False, xaxis_title="", yaxis_title="Outlier %")
                     st.plotly_chart(fig_out, use_container_width=True)
+                    st.caption("Color scale: \U0001F7E2 green = low outlier %  \u2192  \U0001F534 red = high outlier %")
                 else:
                     st.info("No numeric columns found for outlier detection.")
 
@@ -362,14 +373,14 @@ if uploaded_file:
             f"= **{total_checks:,} checks** performed on this dataset)."
         )
 
-        headline_col, _ = st.columns([1, 3])
-        headline_col.metric(
+        # All 6 score cards in a single row (one line), so nothing wraps
+        # onto a second row even with the added headline pass-rate card.
+        rcol0, rcol1, rcol2, rcol3, rcol4, rcol5 = st.columns(6)
+        rcol0.metric(
             "\U0001F3AF Overall Pass Rate", f"{pct_passed}%",
             help="Share of all rule checks (rules x records) that passed. This is the single best "
                  "at-a-glance number for 'how healthy is this dataset overall'.",
         )
-
-        rcol1, rcol2, rcol3, rcol4, rcol5 = st.columns(5)
         rcol1.metric(
             "\U0001F4CB Rules Executed", score["rules_executed"],
             help="Number of distinct DQ rules that were evaluated against this dataset.",
@@ -396,24 +407,16 @@ if uploaded_file:
         st.subheader("Data Quality (DQ) Dimensions")
         if not dim_summary.empty:
             # Same line+marker chart as before - only the color changed:
-            # markers are colored on a continuous red-to-green scale tied
-            # directly to the pass rate value (0% = red, 100% = green),
-            # so the color itself communicates severity at a glance
-            # without needing to read the number.
+            # Vertical bar chart, one bar per dimension, colored on a
+            # continuous red-to-green scale tied to the pass rate value
+            # (0% = red, 100% = green).
             dim_sorted = dim_summary.sort_values("dimension")
-            fig_dim = go.Figure(go.Scatter(
+            fig_dim = go.Figure(go.Bar(
                 x=dim_sorted["dimension"],
                 y=dim_sorted["pass_rate_pct"],
-                mode="lines+markers+text",
-                line=dict(color=BRAND_BLUE, width=2),
-                marker=dict(
-                    size=14,
-                    color=dim_sorted["pass_rate_pct"],
-                    colorscale=HEALTH_SCALE, cmin=0, cmax=100,
-                    line=dict(color="white", width=1.5),
-                ),
+                marker=dict(color=dim_sorted["pass_rate_pct"], colorscale=HEALTH_SCALE, cmin=0, cmax=100),
                 text=dim_sorted["pass_rate_pct"].astype(str) + "%",
-                textposition="top center",
+                textposition="outside",
                 hovertemplate="%{x}: %{y}%<extra></extra>",
             ))
             fig_dim.update_layout(
@@ -544,9 +547,9 @@ if uploaded_file:
 
         st.subheader("Historical Quality Trend")
         if len(run_history) > 1:
-            fig_trend = px.line(run_history, x="run_timestamp", y="quality_score", markers=True)
-            fig_trend.update_traces(line_color=BRAND_BLUE, marker_color=BRAND_DARK)
-            fig_trend.update_layout(xaxis_title="", yaxis_title="Quality Score")
+            fig_trend = px.bar(run_history, x="run_timestamp", y="quality_score", color="quality_score",
+                                color_continuous_scale=HEALTH_SCALE, range_color=[0, 100])
+            fig_trend.update_layout(coloraxis_showscale=False, xaxis_title="", yaxis_title="Quality Score")
             st.plotly_chart(fig_trend, use_container_width=True)
         else:
             st.info("Run this dataset a few more times to build a trend.")
