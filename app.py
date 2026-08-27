@@ -75,6 +75,21 @@ st.markdown(f"""
         border-radius: 8px;
         padding: 14px 16px 10px 16px;
         box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+        min-height: 118px;
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+    }}
+    /* Every metric column stretches to match the tallest card in its
+       row, and every card fills its column - this is what keeps all
+       score cards the same size even when some have a delta line and
+       others don't. */
+    div[data-testid="column"] {{
+        display: flex;
+    }}
+    div[data-testid="column"] > div {{
+        width: 100%;
     }}
     [data-testid="stMetricLabel"] {{
         color: {BRAND_GRAY};
@@ -406,24 +421,25 @@ if uploaded_file:
 
         st.subheader("Data Quality (DQ) Dimensions")
         if not dim_summary.empty:
-            # Same line+marker chart as before - only the color changed:
-            # Vertical bar chart, one bar per dimension, colored on a
+            # Horizontal bar chart, one bar per dimension, colored on a
             # continuous red-to-green scale tied to the pass rate value
-            # (0% = red, 100% = green).
-            dim_sorted = dim_summary.sort_values("dimension")
+            # (0% = red, 100% = green). Dimension names sit on the y-axis
+            # so they're always readable, never rotated.
+            dim_sorted = dim_summary.sort_values("pass_rate_pct")
             fig_dim = go.Figure(go.Bar(
-                x=dim_sorted["dimension"],
-                y=dim_sorted["pass_rate_pct"],
+                x=dim_sorted["pass_rate_pct"],
+                y=dim_sorted["dimension"],
+                orientation="h",
                 marker=dict(color=dim_sorted["pass_rate_pct"], colorscale=HEALTH_SCALE, cmin=0, cmax=100),
                 text=dim_sorted["pass_rate_pct"].astype(str) + "%",
                 textposition="outside",
-                hovertemplate="%{x}: %{y}%<extra></extra>",
+                hovertemplate="%{y}: %{x}%<extra></extra>",
             ))
             fig_dim.update_layout(
-                yaxis=dict(range=[0, 115], title="Pass Rate %"),
-                xaxis_title="",
-                height=380,
-                margin=dict(l=10, r=20, t=30, b=30),
+                xaxis=dict(range=[0, 115], title="Pass Rate %"),
+                yaxis_title="",
+                height=max(280, 55 * len(dim_sorted)),
+                margin=dict(l=10, r=30, t=20, b=30),
             )
             st.plotly_chart(fig_dim, use_container_width=True)
             st.caption("Color scale: \U0001F534 red = low pass rate  \u2192  \U0001F7E2 green = high pass rate")
