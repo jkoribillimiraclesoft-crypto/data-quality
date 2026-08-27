@@ -53,7 +53,7 @@ pio.templates["miracle"].layout.update(
 )
 pio.templates.default = "miracle"
 
-HEALTH_SCALE = [[0, FAIL_RED], [0.5, WARN_AMBER], [1, PASS_GREEN]]
+HEALTH_SCALE = [[0, FAIL_RED], [1, PASS_GREEN]]  # higher value = better -> red to green
 
 st.set_page_config(page_title="Data Quality & Profiling Platform", layout="wide", page_icon="\U0001F4CA")
 
@@ -222,10 +222,10 @@ if uploaded_file:
         n_cols_total = len(health_df := profile["column_health"])
         is_wide = n_cols_total > WIDE_THRESHOLD
 
-        # Reversed health scale: for metrics where a HIGH value is BAD
-        # (null %, outlier %) rather than good (health score), so red
-        # lands on the high end instead of the low end.
-        RISK_SCALE = [[0, PASS_GREEN], [0.5, WARN_AMBER], [1, FAIL_RED]]
+        # Continuous red-to-green colorscale, reversed: here a HIGH value
+        # (more nulls / more outliers) is BAD, so red sits at the high end
+        # and green at the low end - opposite of HEALTH_SCALE.
+        RISK_SCALE = [[0, PASS_GREEN], [1, FAIL_RED]]
 
         def _limited(df, value_col, ascending, key, slider_label):
             """For wide datasets, let the user cap how many columns show
@@ -282,6 +282,7 @@ if uploaded_file:
             fig_null.update_layout(xaxis=dict(range=[0, 100], title="Null %"), yaxis_title="",
                                     height=_dyn_height(len(nulls_sorted)), margin=dict(l=10, r=20, t=20, b=30))
             st.plotly_chart(fig_null, use_container_width=True)
+            st.caption("Color scale: \U0001F7E2 green = low missing %  \u2192  \U0001F534 red = high missing %")
             with st.expander(f"View all {len(nulls_df)} columns (table)"):
                 st.dataframe(nulls_df.sort_values("null_pct", ascending=False), use_container_width=True)
 
@@ -314,6 +315,7 @@ if uploaded_file:
                                    color_continuous_scale=RISK_SCALE, range_color=[0, 100])
                 fig_null.update_layout(coloraxis_showscale=False, xaxis_title="", yaxis_title="Null %")
                 st.plotly_chart(fig_null, use_container_width=True)
+                st.caption("Color scale: \U0001F7E2 green = low missing %  \u2192  \U0001F534 red = high missing %")
             with c2:
                 st.subheader("Outlier Distribution")
                 outliers_df = profile["outliers"]
@@ -342,50 +344,74 @@ if uploaded_file:
     # =============================================================
     with tab_rules:
         st.subheader("Rule Execution Summary")
+
+        # Passed/Failed/Warnings are counts from the full rules x records
+        # cross-product (e.g. 11 rules x 5,250 records = up to ~57,750
+        # individual checks) - a raw count like "Passed: 42,318" tells an
+        # end user almost nothing on its own. Show each as a share of
+        # total checks performed instead, plus one headline pass-rate
+        # number, so the summary is readable at a glance.
+        total_checks = score["passed"] + score["failed"] + score["warnings"]
+        pct_passed = round(score["passed"] / total_checks * 100, 1) if total_checks else 0.0
+        pct_failed = round(score["failed"] / total_checks * 100, 1) if total_checks else 0.0
+        pct_warnings = round(score["warnings"] / total_checks * 100, 1) if total_checks else 0.0
+        pct_critical_of_failed = round(score["critical_issues"] / score["failed"] * 100, 1) if score["failed"] else 0.0
+
+        st.caption(
+            f"Each **check** = one rule applied to one record ({score['rules_executed']} rules x records "
+            f"= **{total_checks:,} checks** performed on this dataset)."
+        )
+
+        headline_col, _ = st.columns([1, 3])
+        headline_col.metric(
+            "\U0001F3AF Overall Pass Rate", f"{pct_passed}%",
+            help="Share of all rule checks (rules x records) that passed. This is the single best "
+                 "at-a-glance number for 'how healthy is this dataset overall'.",
+        )
+
         rcol1, rcol2, rcol3, rcol4, rcol5 = st.columns(5)
         rcol1.metric(
             "\U0001F4CB Rules Executed", score["rules_executed"],
-            help="Total number of enabled DQ rules that were evaluated against this dataset.",
+            help="Number of distinct DQ rules that were evaluated against this dataset.",
         )
         rcol2.metric(
-            "\u2705 Passed", score["passed"],
-            help="Rule checks where the data met the expected condition.",
+            "\u2705 Passed", f"{score['passed']:,}", delta=f"{pct_passed}% of checks", delta_color="off",
+            help=f"Checks where the data met the rule's condition - {pct_passed}% of the {total_checks:,} total checks performed.",
         )
         rcol3.metric(
-            "\u274C Failed", score["failed"],
-            help="Rule checks where the data violated the expected condition.",
+            "\u274C Failed", f"{score['failed']:,}", delta=f"{pct_failed}% of checks", delta_color="off",
+            help=f"Checks where the data violated the rule's condition - {pct_failed}% of the {total_checks:,} total checks performed.",
         )
         rcol4.metric(
-            "\u26A0\uFE0F Warnings", score["warnings"],
-            help="Rule checks that flagged a lower-severity issue - worth reviewing but not blocking.",
+            "\u26A0\uFE0F Warnings", f"{score['warnings']:,}", delta=f"{pct_warnings}% of checks", delta_color="off",
+            help=f"Lower-severity issues flagged, not hard failures - {pct_warnings}% of the {total_checks:,} total checks performed.",
         )
         rcol5.metric(
-            "\U0001F534 Critical Issues", score["critical_issues"],
-            help="Failed checks marked CRITICAL severity - the highest-priority issues to fix first.",
+            "\U0001F534 Critical Issues", f"{score['critical_issues']:,}",
+            delta=f"{pct_critical_of_failed}% of failures" if score["failed"] else None, delta_color="off",
+            help="Failed checks marked CRITICAL severity - the highest-priority issues to fix first, "
+                 "shown as a share of all failures above.",
         )
 
         st.subheader("Data Quality (DQ) Dimensions")
         if not dim_summary.empty:
-            # Line chart with markers - one point per dimension, connected
-            # to show the pass-rate profile across dimensions at a glance.
-            # Markers use a discrete PASS/WARN/FAIL color, same semantics
-            # as the rest of the app, so a glance tells you which
-            # dimensions are healthy vs. at risk vs. broken.
-            def _status_color(pct):
-                if pct >= 90:
-                    return PASS_GREEN
-                if pct >= 70:
-                    return WARN_AMBER
-                return FAIL_RED
-
+            # Same line+marker chart as before - only the color changed:
+            # markers are colored on a continuous red-to-green scale tied
+            # directly to the pass rate value (0% = red, 100% = green),
+            # so the color itself communicates severity at a glance
+            # without needing to read the number.
             dim_sorted = dim_summary.sort_values("dimension")
-            marker_colors = dim_sorted["pass_rate_pct"].apply(_status_color)
             fig_dim = go.Figure(go.Scatter(
                 x=dim_sorted["dimension"],
                 y=dim_sorted["pass_rate_pct"],
                 mode="lines+markers+text",
-                line=dict(color="#D1D5DB", width=2),
-                marker=dict(size=14, color=marker_colors, line=dict(color="white", width=1.5)),
+                line=dict(color=BRAND_BLUE, width=2),
+                marker=dict(
+                    size=14,
+                    color=dim_sorted["pass_rate_pct"],
+                    colorscale=HEALTH_SCALE, cmin=0, cmax=100,
+                    line=dict(color="white", width=1.5),
+                ),
                 text=dim_sorted["pass_rate_pct"].astype(str) + "%",
                 textposition="top center",
                 hovertemplate="%{x}: %{y}%<extra></extra>",
@@ -397,7 +423,7 @@ if uploaded_file:
                 margin=dict(l=10, r=20, t=30, b=30),
             )
             st.plotly_chart(fig_dim, use_container_width=True)
-            st.caption("\U0001F7E2 90%+ healthy   \U0001F7E0 70-89% needs attention   \U0001F534 below 70% at risk")
+            st.caption("Color scale: \U0001F534 red = low pass rate  \u2192  \U0001F7E2 green = high pass rate")
             with st.expander("View dimension detail table"):
                 st.dataframe(dim_summary, use_container_width=True)
         else:
