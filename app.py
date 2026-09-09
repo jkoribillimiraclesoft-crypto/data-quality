@@ -420,6 +420,54 @@ if uploaded_file:
                  "shown as a share of all failures above.",
         )
 
+        # -----------------------------------------------------------
+        # Diagnostic: answers "why isn't rule X showing results?"
+        # without guessing - shows whether a rule is in the catalog,
+        # whether it made the cut given the slider, whether its target
+        # column exists in this dataset, and what statuses it produced.
+        # -----------------------------------------------------------
+        with st.expander("\U0001F527 Debug: is a specific rule actually running?"):
+            rule_id_lookup = st.text_input(
+                "Rule ID to check (e.g. INC-100)", value="", key="rule_debug_lookup",
+            ).strip()
+            if rule_id_lookup:
+                catalog_match = next((r for r in full_rule_catalog if r["rule_id"] == rule_id_lookup), None)
+                if not catalog_match:
+                    st.error(
+                        f"'{rule_id_lookup}' is not in the currently loaded rule_catalog.json "
+                        f"({len(full_rule_catalog)} rules total). If you just added it, the deployed "
+                        f"app hasn't picked up the updated file - check that it was pushed and redeployed."
+                    )
+                else:
+                    is_active = any(r["rule_id"] == rule_id_lookup for r in active_rules)
+                    st.write(f"**Found in catalog:** priority {catalog_match['priority']}, "
+                             f"attribute `{catalog_match['attribute']}`, dimension {catalog_match['dimension']}.")
+                    if not is_active:
+                        st.warning(
+                            f"This rule is **not in the active set**. The slider is applying the first "
+                            f"{rule_count} of {total_available_rules} rules by priority, and this rule's "
+                            f"priority ({catalog_match['priority']}) puts it outside that range. "
+                            f"Move the slider to at least {catalog_match['priority']} to include it."
+                        )
+                    else:
+                        col_exists = catalog_match["attribute"] in df.columns
+                        if not col_exists:
+                            st.warning(
+                                f"Rule is active, but this dataset has no column named "
+                                f"`{catalog_match['attribute']}` (exact match, case-sensitive). "
+                                f"Columns actually present: {', '.join(df.columns)}"
+                            )
+                        else:
+                            rule_rows = rule_results[rule_results["rule_id"] == rule_id_lookup]
+                            st.write("Rule is active and its column exists. Status breakdown:")
+                            st.dataframe(
+                                rule_rows["status"].value_counts().rename_axis("status").reset_index(name="count"),
+                                use_container_width=True, hide_index=True,
+                            )
+                            if rule_rows["status"].isin(["FAIL", "WARNING", "ERROR"]).sum() == 0:
+                                st.info("No FAIL/WARNING/ERROR rows - every value in this column actually passed the rule, so there's nothing to show in Exceptions. That's correct behavior, not a bug.")
+
+
         st.subheader("Data Quality (DQ) Dimensions")
         if not dim_summary.empty:
             # Horizontal bar chart, one bar per dimension, colored on a
