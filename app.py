@@ -675,15 +675,58 @@ if uploaded_file:
             st.info("Need at least 2 historical runs of this dataset to generate predictions.")
 
     # =============================================================
-    # Final export: download the processed dataset once all checks
-    # (profiling + rule engine) have run. Original data is returned
-    # unchanged, plus three added columns summarizing the outcome of
-    # every rule check performed on that row.
+    # Final export: clean the dataset, then download it. "Processed"
+    # means: whitespace trimmed everywhere, ENUM-validated columns
+    # case-normalized to their canonical allowed value (driven by the
+    # rule catalog, not hardcoded per column), email columns lowercased,
+    # and exact duplicate rows removed. Rules are then RE-APPLIED to the
+    # cleaned data so the downloaded file's dq_status reflects the
+    # dataset after cleaning, not before.
     # =============================================================
     st.divider()
     st.subheader("\U0001F4E5 Download Processed Dataset")
+    st.caption(
+        "Processing applied: whitespace trimmed, ENUM-validated fields case-normalized to their "
+        "allowed value, emails lowercased, exact duplicate rows removed. Values that are "
+        "genuinely invalid (not just a formatting difference) are left as-is and still flagged, "
+        "not guessed at."
+    )
 
-    row_checks = rule_results[rule_results["row_index"].notna()].copy()
+    def _clean_dataset(raw_df, rules):
+        cleaned = raw_df.copy()
+        fixes = {"whitespace_trimmed": 0, "enum_case_fixed": 0, "email_lowercased": 0}
+
+        for col in cleaned.columns:
+            trimmed = cleaned[col].apply(lambda v: v.strip() if isinstance(v, str) else v)
+            fixes["whitespace_trimmed"] += int((trimmed != cleaned[col]).fillna(False).sum())
+            cleaned[col] = trimmed
+
+        for rule in rules:
+            if rule["rule_type"] == "ENUM" and rule["attribute"] in cleaned.columns:
+                lookup = {a.lower(): a for a in rule["parameter"]}
+                col = rule["attribute"]
+                def _fix_enum(v, lookup=lookup):
+                    if not isinstance(v, str):
+                        return v
+                    return lookup.get(v.lower(), v)
+                fixed = cleaned[col].apply(_fix_enum)
+                fixes["enum_case_fixed"] += int((fixed != cleaned[col]).fillna(False).sum())
+                cleaned[col] = fixed
+
+        for col in cleaned.columns:
+            if "email" in col.lower():
+                lowered = cleaned[col].apply(lambda v: v.lower() if isinstance(v, str) else v)
+                fixes["email_lowercased"] += int((lowered != cleaned[col]).fillna(False).sum())
+                cleaned[col] = lowered
+
+        before = len(cleaned)
+        cleaned = cleaned.drop_duplicates().reset_index(drop=True)
+        return cleaned, fixes, before - len(cleaned)
+
+    cleaned_df, fix_counts, duplicates_removed = _clean_dataset(df, active_rules)
+    cleaned_rule_results = apply_rules(cleaned_df, active_rules)
+
+    row_checks = cleaned_rule_results[cleaned_rule_results["row_index"].notna()].copy()
     if not row_checks.empty:
         row_checks["row_index"] = row_checks["row_index"].astype(int)
 
@@ -700,26 +743,29 @@ if uploaded_file:
         dq_failed = grouped.apply(lambda s: (s.isin(["FAIL", "ERROR"])).sum())
         dq_warnings = grouped.apply(lambda s: (s == "WARNING").sum())
 
-        processed_df = df.copy()
-        processed_df["dq_status"] = dq_status.reindex(processed_df.index).fillna("PASS")
-        processed_df["dq_failed_checks"] = dq_failed.reindex(processed_df.index).fillna(0).astype(int)
-        processed_df["dq_warning_checks"] = dq_warnings.reindex(processed_df.index).fillna(0).astype(int)
+        cleaned_df["dq_status"] = dq_status.reindex(cleaned_df.index).fillna("PASS")
+        cleaned_df["dq_failed_checks"] = dq_failed.reindex(cleaned_df.index).fillna(0).astype(int)
+        cleaned_df["dq_warning_checks"] = dq_warnings.reindex(cleaned_df.index).fillna(0).astype(int)
     else:
-        processed_df = df.copy()
-        processed_df["dq_status"] = "PASS"
-        processed_df["dq_failed_checks"] = 0
-        processed_df["dq_warning_checks"] = 0
+        cleaned_df["dq_status"] = "PASS"
+        cleaned_df["dq_failed_checks"] = 0
+        cleaned_df["dq_warning_checks"] = 0
 
-    status_counts = processed_df["dq_status"].value_counts()
+    ec1, ec2, ec3, ec4 = st.columns(4)
+    ec1.metric("Duplicate rows removed", f"{duplicates_removed:,}")
+    ec2.metric("Whitespace trims", f"{fix_counts['whitespace_trimmed']:,}")
+    ec3.metric("Case corrections", f"{fix_counts['enum_case_fixed']:,}")
+    ec4.metric("Emails lowercased", f"{fix_counts['email_lowercased']:,}")
+
+    status_counts = cleaned_df["dq_status"].value_counts()
     st.caption(
-        f"Original {len(processed_df):,} rows, each tagged with the worst outcome across "
-        f"all applied rules: {status_counts.get('PASS', 0):,} PASS, "
-        f"{status_counts.get('WARNING', 0):,} WARNING, {status_counts.get('FAIL', 0):,} FAIL. "
-        f"Includes per-row failed/warning check counts."
+        f"After cleaning: {len(cleaned_df):,} rows remain "
+        f"({status_counts.get('PASS', 0):,} PASS, {status_counts.get('WARNING', 0):,} WARNING, "
+        f"{status_counts.get('FAIL', 0):,} FAIL), re-scored against the same rules applied above."
     )
     st.download_button(
         "Download processed dataset (CSV)",
-        data=processed_df.to_csv(index=False).encode("utf-8"),
+        data=cleaned_df.to_csv(index=False).encode("utf-8"),
         file_name=f"processed_{dataset_label}",
         mime="text/csv",
     )
