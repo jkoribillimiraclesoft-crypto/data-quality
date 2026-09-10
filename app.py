@@ -31,7 +31,6 @@ from rule_engine import (
     load_rule_catalog, select_rules, apply_rules, summarize_by_dimension,
     get_exceptions, overall_rule_score
 )
-from entity_resolution import find_candidate_matches, build_clusters, build_golden_dataset, estimate_comparisons
 
 # =================================================================
 # Brand palette (sampled from assets/miracle_logo.png) + chart theme
@@ -226,9 +225,8 @@ if uploaded_file:
     dim_summary = summarize_by_dimension(rule_results)
     exceptions_df = get_exceptions(rule_results, df)
 
-    tab_overview, tab_rules, tab_profile, tab_trends, tab_mdm = st.tabs(
-        ["\U0001F4CB Overview", "\u2705 DQ Rules & Exceptions", "\U0001F50D Profiling Details",
-         "\U0001F4C8 Trends & Predictions", "\U0001F517 Entity Resolution (MDM)"]
+    tab_overview, tab_rules, tab_profile, tab_trends = st.tabs(
+        ["\U0001F4CB Overview", "\u2705 DQ Rules & Exceptions", "\U0001F50D Profiling Details", "\U0001F4C8 Trends & Predictions"]
     )
 
     # =============================================================
@@ -677,137 +675,54 @@ if uploaded_file:
             st.info("Need at least 2 historical runs of this dataset to generate predictions.")
 
     # =============================================================
-    # TAB 5: Entity Resolution (MDM)
+    # Final export: download the processed dataset once all checks
+    # (profiling + rule engine) have run. Original data is returned
+    # unchanged, plus three added columns summarizing the outcome of
+    # every rule check performed on that row.
     # =============================================================
-    with tab_mdm:
-        st.subheader("Entity resolution & golden record merge")
-        st.caption(
-            "Standard MDM pattern: score how similar pairs of records are on chosen fields "
-            "(0-100%). Any pair scoring at or above the threshold is treated as the same "
-            "real-world entity and gets merged into one 'golden record'."
-        )
+    st.divider()
+    st.subheader("\U0001F4E5 Download Processed Dataset")
 
-        text_like_cols = [c for c in df.columns if df[c].dtype == object]
-        default_fields = [c for c in text_like_cols if any(
-            k in c.lower() for k in ["name", "email", "phone", "customer"]
-        )][:4] or text_like_cols[:3]
+    row_checks = rule_results[rule_results["row_index"].notna()].copy()
+    if not row_checks.empty:
+        row_checks["row_index"] = row_checks["row_index"].astype(int)
 
-        mc1, mc2 = st.columns([2, 1])
-        with mc1:
-            match_fields = st.multiselect(
-                "Fields to compare", options=text_like_cols, default=default_fields,
-                help="Records are compared only on these fields. Include enough identity "
-                     "signal (name, email, phone) that a genuine match is distinguishable "
-                     "from a coincidence.",
-            )
-        with mc2:
-            block_options = ["(none - compare all pairs)"] + text_like_cols
-            block_choice = st.selectbox(
-                "Block by (recommended for large datasets)", options=block_options,
-                help="Only records sharing this field get compared to each other. Without "
-                     "blocking, comparison cost grows with the square of row count and can "
-                     "get slow on large datasets.",
-            )
-        block_by = None if block_choice.startswith("(none") else block_choice
+        def _worst_status(statuses):
+            s = set(statuses)
+            if "FAIL" in s or "ERROR" in s:
+                return "FAIL"
+            if "WARNING" in s:
+                return "WARNING"
+            return "PASS"
 
-        threshold = st.slider(
-            "Match threshold %", min_value=50, max_value=100, value=85,
-            help="Pairs scoring at or above this go into the same golden record. Lower = "
-                 "more aggressive merging (more false-positive merges). Higher = safer but "
-                 "may miss real duplicates with minor data entry differences.",
-        )
-        min_fields = st.slider(
-            "Minimum comparable fields required", min_value=1, max_value=max(1, len(match_fields)),
-            value=min(2, max(1, len(match_fields))),
-            help="A pair must have at least this many non-missing, comparable fields to be "
-                 "considered a match - prevents matching on a single coincidentally similar "
-                 "field when everything else is blank.",
-        )
+        grouped = row_checks.groupby("row_index")["status"]
+        dq_status = grouped.apply(_worst_status)
+        dq_failed = grouped.apply(lambda s: (s.isin(["FAIL", "ERROR"])).sum())
+        dq_warnings = grouped.apply(lambda s: (s == "WARNING").sum())
 
-        # Pre-flight cost estimate - shown BEFORE running, not discovered by
-        # waiting. Blocking cardinality matters a lot more than row count:
-        # e.g. 5,250 rows with only 31 distinct last names still produces
-        # ~450,000 comparisons and took 90+ seconds in testing, even with
-        # blocking "on" - because each block still averaged ~170 rows.
-        SAFE_COMPARISON_BUDGET = 120_000
-        est_comparisons = estimate_comparisons(df, block_by=block_by) if match_fields else 0
-        over_budget = est_comparisons > SAFE_COMPARISON_BUDGET
+        processed_df = df.copy()
+        processed_df["dq_status"] = dq_status.reindex(processed_df.index).fillna("PASS")
+        processed_df["dq_failed_checks"] = dq_failed.reindex(processed_df.index).fillna(0).astype(int)
+        processed_df["dq_warning_checks"] = dq_warnings.reindex(processed_df.index).fillna(0).astype(int)
+    else:
+        processed_df = df.copy()
+        processed_df["dq_status"] = "PASS"
+        processed_df["dq_failed_checks"] = 0
+        processed_df["dq_warning_checks"] = 0
 
-        if match_fields:
-            st.caption(f"Estimated comparisons at this setting: **{est_comparisons:,}**"
-                       + (" \u2014 this exceeds the safe budget and will be slow. "
-                          "Pick a 'Block by' field with more distinct values (e.g. postal code "
-                          "or a compound key) to shrink block sizes." if over_budget else "."))
-            if block_by is None and len(df) > 300:
-                st.warning(
-                    f"No blocking selected on {len(df):,} rows: only the first 300 rows will "
-                    f"actually be compared to each other - the remaining {len(df) - 300:,} rows "
-                    f"won't be checked for matches at all. Pick a 'Block by' field to get full "
-                    f"coverage of the dataset."
-                )
-
-        run_mdm = st.button("\U0001F517 Run entity resolution", type="primary",
-                             disabled=over_budget)
-
-        if run_mdm:
-            if not match_fields:
-                st.warning("Select at least one field to compare.")
-            else:
-                with st.spinner("Scoring record pairs and building clusters..."):
-                    pairs, truncated_blocks, rows_skipped = find_candidate_matches(
-                        df, match_fields, threshold, block_by=block_by,
-                        min_fields_compared=min_fields,
-                    )
-                    clusters = build_clusters(df, pairs)
-                    golden_df = build_golden_dataset(df, clusters)
-                st.session_state["mdm_result"] = {
-                    "pairs": pairs, "clusters": clusters, "golden_df": golden_df,
-                    "truncated_blocks": truncated_blocks, "rows_skipped": rows_skipped,
-                    "dataset_id": dataset_id,
-                }
-        result = st.session_state.get("mdm_result")
-        if result and result.get("dataset_id") == dataset_id:
-            pairs, clusters, golden_df = result["pairs"], result["clusters"], result["golden_df"]
-            merged_clusters = [c for c in clusters if len(c) > 1]
-            records_merged_away = len(df) - len(golden_df)
-
-            m1, m2, m3, m4 = st.columns(4)
-            m1.metric("Original records", f"{len(df):,}")
-            m2.metric("Golden records", f"{len(golden_df):,}")
-            m3.metric("Records consolidated", f"{records_merged_away:,}")
-            m4.metric("Multi-record entities", f"{len(merged_clusters):,}")
-
-            if result["truncated_blocks"] > 0:
-                st.warning(
-                    f"{result['truncated_blocks']} block(s) exceeded the size cap - "
-                    f"**{result['rows_skipped']:,} rows were never compared to anything** as a "
-                    f"result, so matches involving them would be missed. Use a 'Block by' field "
-                    f"with more distinct values for full coverage."
-                )
-
-            if merged_clusters:
-                st.subheader("Matched pairs (audit trail)")
-                pair_rows = [
-                    {"Record A": df.at[i, match_fields[0]] if match_fields else i,
-                     "Record B": df.at[j, match_fields[0]] if match_fields else j,
-                     "Similarity %": score}
-                    for i, j, score in sorted(pairs, key=lambda p: -p[2])[:200]
-                ]
-                st.dataframe(pd.DataFrame(pair_rows), use_container_width=True, hide_index=True)
-                if len(pairs) > 200:
-                    st.caption(f"Showing top 200 of {len(pairs)} matched pairs by similarity.")
-
-                st.subheader("Golden dataset (merged)")
-                st.dataframe(golden_df, use_container_width=True)
-                st.download_button(
-                    "\U0001F4E5 Download golden dataset (CSV)",
-                    data=golden_df.to_csv(index=False).encode("utf-8"),
-                    file_name="golden_records.csv", mime="text/csv",
-                )
-            else:
-                st.success("No records crossed the match threshold - nothing to merge at this setting.")
-        elif not run_mdm:
-            st.info("Choose fields and a threshold, then run entity resolution.")
+    status_counts = processed_df["dq_status"].value_counts()
+    st.caption(
+        f"Original {len(processed_df):,} rows, each tagged with the worst outcome across "
+        f"all applied rules: {status_counts.get('PASS', 0):,} PASS, "
+        f"{status_counts.get('WARNING', 0):,} WARNING, {status_counts.get('FAIL', 0):,} FAIL. "
+        f"Includes per-row failed/warning check counts."
+    )
+    st.download_button(
+        "Download processed dataset (CSV)",
+        data=processed_df.to_csv(index=False).encode("utf-8"),
+        file_name=f"processed_{dataset_label}",
+        mime="text/csv",
+    )
 
 else:
     st.info("Upload a dataset from the sidebar to begin.")
