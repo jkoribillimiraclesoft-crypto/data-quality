@@ -1,9 +1,9 @@
 [
   {
-    "rule_id": "LOC-001",
+    "rule_id": "CUST-001",
     "dimension": "Completeness",
-    "rule_name": "Customer Reference Mandatory",
-    "attribute": "customer_reference",
+    "rule_name": "Customer ID Mandatory",
+    "attribute": "customer_id",
     "rule_type": "NOT_NULL",
     "parameter": null,
     "severity": "CRITICAL",
@@ -11,10 +11,10 @@
     "priority": 1
   },
   {
-    "rule_id": "LOC-002",
+    "rule_id": "CUST-002",
     "dimension": "Uniqueness",
-    "rule_name": "Customer Reference Unique",
-    "attribute": "customer_reference",
+    "rule_name": "Customer ID Unique",
+    "attribute": "customer_id",
     "rule_type": "UNIQUE",
     "parameter": null,
     "severity": "CRITICAL",
@@ -22,35 +22,35 @@
     "priority": 2
   },
   {
-    "rule_id": "LOC-003",
+    "rule_id": "CUST-010",
     "dimension": "Completeness",
-    "rule_name": "Customer Name Mandatory",
-    "attribute": "customer_name",
+    "rule_name": "Name Mandatory",
+    "attribute": "name",
     "rule_type": "NOT_NULL",
     "parameter": null,
-    "severity": "CRITICAL",
+    "severity": "ERROR",
     "enabled": true,
     "priority": 3
   },
   {
-    "rule_id": "LOC-004",
+    "rule_id": "CUST-012",
     "dimension": "Validity",
-    "rule_name": "Customer Name Length",
-    "attribute": "customer_name",
+    "rule_name": "Name Length",
+    "attribute": "name",
     "rule_type": "LENGTH",
     "parameter": {
       "min": 2,
       "max": 100
     },
-    "severity": "ERROR",
+    "severity": "WARNING",
     "enabled": true,
     "priority": 4
   },
   {
-    "rule_id": "LOC-005",
+    "rule_id": "CUST-020",
     "dimension": "Completeness",
     "rule_name": "Email Mandatory",
-    "attribute": "email_address",
+    "attribute": "email",
     "rule_type": "NOT_NULL",
     "parameter": null,
     "severity": "ERROR",
@@ -58,10 +58,10 @@
     "priority": 5
   },
   {
-    "rule_id": "LOC-006",
+    "rule_id": "CUST-021",
     "dimension": "Validity",
     "rule_name": "Email Format",
-    "attribute": "email_address",
+    "attribute": "email",
     "rule_type": "REGEX",
     "parameter": "^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$",
     "severity": "ERROR",
@@ -69,32 +69,32 @@
     "priority": 6
   },
   {
-    "rule_id": "LOC-007",
+    "rule_id": "CUST-030",
     "dimension": "Completeness",
-    "rule_name": "Mobile Number Mandatory",
-    "attribute": "mobile_number",
+    "rule_name": "Phone Mandatory",
+    "attribute": "phone",
     "rule_type": "NOT_NULL",
     "parameter": null,
-    "severity": "ERROR",
+    "severity": "WARNING",
     "enabled": true,
     "priority": 7
   },
   {
-    "rule_id": "LOC-008",
+    "rule_id": "CUST-031",
     "dimension": "Validity",
-    "rule_name": "Mobile Number Format",
-    "attribute": "mobile_number",
+    "rule_name": "Phone Format",
+    "attribute": "phone",
     "rule_type": "REGEX",
-    "parameter": "^\\+91\\s?[6-9]\\d{9}$",
+    "parameter": "^\\+?\\d{7,15}$",
     "severity": "ERROR",
     "enabled": true,
     "priority": 8
   },
   {
-    "rule_id": "LOC-009",
+    "rule_id": "CUST-036",
     "dimension": "Validity",
-    "rule_name": "Mobile Number Repeated Digits",
-    "attribute": "mobile_number",
+    "rule_name": "Repeated Digit Phone",
+    "attribute": "phone",
     "rule_type": "NOT_REPEATED_DIGITS",
     "parameter": null,
     "severity": "WARNING",
@@ -102,148 +102,101 @@
     "priority": 9
   },
   {
-    "rule_id": "LOC-010",
-    "dimension": "Conformity",
-    "rule_name": "Pincode Format",
-    "attribute": "pincode",
-    "rule_type": "REGEX",
-    "parameter": "^[1-9]\\d{5}$",
+    "rule_id": "CUST-050",
+    "dimension": "Validity",
+    "rule_name": "Age Range",
+    "attribute": "age",
+    "rule_type": "RANGE",
+    "parameter": {
+      "min": 0,
+      "max": 120
+    },
     "severity": "ERROR",
     "enabled": true,
     "priority": 10
   },
   {
-    "rule_id": "LOC-011",
-    "dimension": "Validity",
-    "rule_name": "Latitude Range",
-    "attribute": "latitude",
-    "rule_type": "RANGE",
-    "parameter": {
-      "min": 6,
-      "max": 38
-    },
-    "severity": "ERROR",
+    "rule_id": "CUST-044",
+    "dimension": "Consistency",
+    "rule_name": "Region Valid Value",
+    "attribute": "region",
+    "rule_type": "ENUM",
+    "parameter": [
+      "North",
+      "South",
+      "East",
+      "West"
+    ],
+    "severity": "WARNING",
     "enabled": true,
     "priority": 11
   },
   {
-    "rule_id": "LOC-012",
-    "dimension": "Validity",
-    "rule_name": "Longitude Range",
-    "attribute": "longitude",
-    "rule_type": "RANGE",
-    "parameter": {
-      "min": 68,
-      "max": 98
-    },
+    "rule_id": "INC-060",
+    "dimension": "Timeliness",
+    "rule_name": "Incident Datetime Mandatory",
+    "attribute": "incident_datetime",
+    "rule_type": "NOT_NULL",
+    "parameter": null,
     "severity": "ERROR",
     "enabled": true,
     "priority": 12
   },
   {
-    "rule_id": "LOC-013",
-    "dimension": "Accuracy",
-    "rule_name": "Geocode Accuracy Range",
-    "attribute": "geocode_accuracy_meters",
-    "rule_type": "RANGE",
-    "parameter": {
-      "min": 0,
-      "max": 10000
-    },
+    "rule_id": "INC-061",
+    "dimension": "Timeliness",
+    "rule_name": "Incident Datetime Format",
+    "attribute": "incident_datetime",
+    "rule_type": "REGEX",
+    "parameter": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
     "severity": "WARNING",
     "enabled": true,
     "priority": 13
   },
   {
-    "rule_id": "LOC-014",
+    "rule_id": "INC-070",
     "dimension": "Accuracy",
-    "rule_name": "Location Confidence Score",
-    "attribute": "location_confidence_score",
+    "rule_name": "Suspect Age Range",
+    "attribute": "suspect_age",
     "rule_type": "RANGE",
     "parameter": {
       "min": 0,
-      "max": 1
+      "max": 120
     },
     "severity": "ERROR",
     "enabled": true,
     "priority": 14
   },
   {
-    "rule_id": "LOC-015",
-    "dimension": "Timeliness",
-    "rule_name": "Last Location Updated Mandatory",
-    "attribute": "last_location_updated",
-    "rule_type": "NOT_NULL",
-    "parameter": null,
-    "severity": "ERROR",
+    "rule_id": "INC-071",
+    "dimension": "Accuracy",
+    "rule_name": "Property Loss Non-Negative",
+    "attribute": "property_loss_usd",
+    "rule_type": "RANGE",
+    "parameter": {
+      "min": 0,
+      "max": 1000000
+    },
+    "severity": "WARNING",
     "enabled": true,
     "priority": 15
   },
   {
-    "rule_id": "LOC-016",
-    "dimension": "Timeliness",
-    "rule_name": "Last Location Updated Format",
-    "attribute": "last_location_updated",
+    "rule_id": "INC-080",
+    "dimension": "Conformity",
+    "rule_name": "State Code Format",
+    "attribute": "state",
     "rule_type": "REGEX",
-    "parameter": "^\\d{4}-\\d{2}-\\d{2}$",
-    "severity": "ERROR",
+    "parameter": "^[A-Z]{2}$",
+    "severity": "WARNING",
     "enabled": true,
     "priority": 16
   },
   {
-    "rule_id": "LOC-017",
-    "dimension": "Consistency",
-    "rule_name": "City Valid Value",
-    "attribute": "city",
-    "rule_type": "ENUM",
-    "parameter": [
-      "Hyderabad",
-      "Bengaluru",
-      "Chennai",
-      "Mumbai",
-      "Delhi"
-    ],
-    "severity": "WARNING",
-    "enabled": true,
-    "priority": 17
-  },
-  {
-    "rule_id": "LOC-018",
-    "dimension": "Consistency",
-    "rule_name": "State Valid Value",
-    "attribute": "state",
-    "rule_type": "ENUM",
-    "parameter": [
-      "Telangana",
-      "Karnataka",
-      "Tamil Nadu",
-      "Maharashtra",
-      "Delhi"
-    ],
-    "severity": "WARNING",
-    "enabled": true,
-    "priority": 18
-  },
-  {
-    "rule_id": "LOC-019",
-    "dimension": "Integrity",
-    "rule_name": "Address Verification Status",
-    "attribute": "address_verification_status",
-    "rule_type": "ENUM",
-    "parameter": [
-      "Verified",
-      "Pending",
-      "Rejected"
-    ],
-    "severity": "ERROR",
-    "enabled": true,
-    "priority": 19
-  },
-  {
-    "rule_id": "LOC-020",
+    "rule_id": "INC-081",
     "dimension": "Conformity",
-    "rule_name": "Customer Gender Valid Value",
-    "attribute": "customer_gender",
+    "rule_name": "Victim Gender Valid Value",
+    "attribute": "victim_gender",
     "rule_type": "ENUM",
     "parameter": [
       "Male",
@@ -253,28 +206,33 @@
     ],
     "severity": "WARNING",
     "enabled": true,
-    "priority": 20
+    "priority": 17
   },
   {
-    "rule_id": "LOC-021",
-    "dimension": "Uniqueness",
-    "rule_name": "Email Address Unique",
-    "attribute": "email_address",
-    "rule_type": "UNIQUE",
+    "rule_id": "INC-090",
+    "dimension": "Integrity",
+    "rule_name": "Case Status Valid Value",
+    "attribute": "case_status",
+    "rule_type": "ENUM",
+    "parameter": [
+      "Open",
+      "Closed",
+      "Under Investigation",
+      "Pending"
+    ],
+    "severity": "ERROR",
+    "enabled": true,
+    "priority": 18
+  },
+  {
+    "rule_id": "INC-091",
+    "dimension": "Integrity",
+    "rule_name": "Weapon Used Mandatory",
+    "attribute": "weapon_used",
+    "rule_type": "NOT_NULL",
     "parameter": null,
     "severity": "WARNING",
     "enabled": true,
-    "priority": 21
-  },
-  {
-    "rule_id": "LOC-022",
-    "dimension": "Uniqueness",
-    "rule_name": "Mobile Number Unique",
-    "attribute": "mobile_number",
-    "rule_type": "UNIQUE",
-    "parameter": null,
-    "severity": "WARNING",
-    "enabled": true,
-    "priority": 22
+    "priority": 19
   }
 ]
